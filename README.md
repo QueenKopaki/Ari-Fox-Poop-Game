@@ -6,7 +6,6 @@ Anyone is free to edit or contribute to this project, I am new to github and do 
 A tiny browser arcade game. You are Ari the Fox. Your mission: poop all over the park. Ranger Nithy's mission: stop you. You have 90 seconds.
 
 **Play it here:** [https://queenkopaki.github.io/Ari-Fox-Poop-Game/]
-*(link works after you enable GitHub Pages — see below)*
 
 ## How to play
 
@@ -26,15 +25,6 @@ A tiny browser arcade game. You are Ari the Fox. Your mission: poop all over the
 ## Running it
 
 No install, no build step. It's one HTML file.
-
-- **Online:** enable GitHub Pages (below) and share the link.
-- **Locally:** download `index.html` and double-click it.
-
-## Publishing with GitHub Pages
-
-1. In this repo, go to **Settings → Pages**.
-2. Under "Build and deployment," set **Source** to `Deploy from a branch`, pick the `main` branch and `/ (root)` folder, then **Save**.
-3. Wait a minute, refresh, and GitHub shows your live URL. Put it in this README where the placeholder link is.
 
 ## Tech
 
