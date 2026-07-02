@@ -48,7 +48,3 @@ Vanilla JavaScript and a `<canvas>` — no libraries, no dependencies. All the d
 - A second park map
 
 Contributions and silly ideas welcome.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
