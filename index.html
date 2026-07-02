@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ari the Fox vs Ranger Nithy</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f2ea;
+    color: #2c2c2a;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 720px;
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; font-weight: 500; }
+  .subtitle { color: #6b6b66; font-size: 14px; margin: 0 0 16px; }
+  .stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stat { background: #f1efe8; border-radius: 8px; padding: 8px 14px; flex: 1; min-width: 90px; }
+  .stat .label { font-size: 12px; color: #6b6b66; }
+  .stat .value { font-size: 22px; font-weight: 500; }
+  canvas {
+    width: 100%;
+    display: block;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    background: #c8e6a8;
+    touch-action: none;
+  }
+  .controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .hint { font-size: 13px; color: #6b6b66; }
+  button {
+    padding: 8px 18px;
+    font-size: 14px;
+    background: white;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: #f5f2ea; }
+  button:active { transform: scale(0.98); }
+  .poop-btn { background: #d9622b; color: white; border-color: #c14e1f; }
+  .poop-btn:hover { background: #c14e1f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ari the Fox vs. Ranger Nithy</h1>
+  <p class="subtitle">Poop everywhere. Avoid Nithy. She's a really bad girl.</p>
+  <div class="stats">
+    <div class="stat"><div class="label">Poops</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">Caught</div><div class="value" id="caught">0</div></div>
+    <div class="stat"><div class="label">Time</div><div class="value" id="time">90</div></div>
+    <div class="stat"><div class="label">Best</div><div class="value" id="best">0</div></div>
+  </div>
+  <canvas id="game" width="680" height="440"></canvas>
+  <div class="controls">
+    <div class="hint">Arrow keys / WASD to move · Space to poop · Mobile: drag to move, tap to poop</div>
+    <div style="display:flex;gap:8px;">
+      <button class="poop-btn" id="poopBtn">Poop</button>
+      <button id="reset">Reset</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d');
+const W = cvs.width, H = cvs.height;
+const scoreEl = document.getElementById('score');
+const caughtEl = document.getElementById('caught');
+const timeEl = document.getElementById('time');
+const bestEl = document.getElementById('best');
+
+let best = parseInt(localStorage.getItem('ari-best') || '0', 10);
+bestEl.textContent = best;
+
+const trees = [];
+const rocks = [];
+const pond = {x: 520, y: 90, rx: 90, ry: 55};
+const poops = [];
+let score = 0, caught = 0, timeLeft = 90;
+let gameOver = false;
+let stunTimer = 0;
+
+function rand(a,b){return a+Math.random()*(b-a);}
+
+function seedMap(){
+  trees.length = 0; rocks.length = 0;
+  const spots = [[80,90],[160,200],[60,340],[240,380],[380,60],[500,300],[610,200],[600,380],[420,220],[320,140],[200,60],[440,380],[340,280]];
+  spots.forEach(([x,y])=>{
+    if(Math.hypot(x-pond.x,(y-pond.y)*1.5) < 110) return;
+    trees.push({x,y,r:rand(18,26)});
+  });
+  for(let i=0;i<10;i++){
+    const x=rand(30,W-30), y=rand(30,H-30);
+    if(Math.hypot(x-pond.x,(y-pond.y)*1.5) < 110) continue;
+    if(trees.some(t=>Math.hypot(t.x-x,t.y-y)<40)) continue;
+    rocks.push({x,y,r:rand(6,11)});
+  }
+}
+seedMap();
+
+const fox = {x: 100, y: 300, vx:0, vy:0, dir:1, wag:0, cooldown:0};
+const nithy = {x: 600, y: 60, vx:0, vy:0, dir:-1, walk:0, speed: 90, angry: 0};
+
+const keys = {};
+window.addEventListener('keydown', e=>{
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  keys[e.key.toLowerCase()] = true;
+  if(e.key===' ') doPoop();
+}, {passive:false});
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+let touchTarget = null;
+cvs.addEventListener('pointerdown', e=>{
+  const r = cvs.getBoundingClientRect();
+  touchTarget = {x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height)};
+  cvs.setPointerCapture(e.pointerId);
+});
+cvs.addEventListener('pointermove', e=>{
+  if(touchTarget){
+    const r = cvs.getBoundingClientRect();
+    touchTarget = {x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height)};
+  }
+});
+cvs.addEventListener('pointerup', e=>{
+  if(touchTarget){
+    const dist = Math.hypot(touchTarget.x-fox.x, touchTarget.y-fox.y);
+    if(dist < 30) doPoop();
+  }
+  touchTarget = null;
+});
+
+document.getElementById('poopBtn').addEventListener('click', doPoop);
+document.getElementById('reset').addEventListener('click', reset);
+
+function reset(){
+  poops.length = 0;
+  score = 0; caught = 0; timeLeft = 90;
+  gameOver = false; stunTimer = 0;
+  fox.x = 100; fox.y = 300; fox.vx=0; fox.vy=0;
+  nithy.x = 600; nithy.y = 60; nithy.speed = 90; nithy.angry = 0;
+  seedMap();
+  scoreEl.textContent = '0';
+  caughtEl.textContent = '0';
+  timeEl.textContent = '90';
+}
+
+function doPoop(){
+  if(gameOver || stunTimer > 0) return;
+  if(fox.cooldown > 0) return;
+  const px = fox.x - fox.dir*14;
+  const py = fox.y + 8;
+  if(Math.hypot(px-pond.x,(py-pond.y)*1.5) < 90) return;
+  poops.push({x:px, y:py, r: rand(5,7.5), tilt: rand(-0.4,0.4), age:0});
+  score++;
+  scoreEl.textContent = score;
+  fox.cooldown = 0.18;
+  nithy.angry = Math.min(1, nithy.angry + 0.05);
+}
+
+function collideCircles(obj, x, y, radius){
+  let nx = x, ny = y;
+  for(const t of trees){
+    const d = Math.hypot(nx-t.x, ny-t.y);
+    const min = t.r + radius;
+    if(d < min){
+      const ang = Math.atan2(ny-t.y, nx-t.x);
+      nx = t.x + Math.cos(ang)*min;
+      ny = t.y + Math.sin(ang)*min;
+    }
+  }
+  if(Math.hypot(nx-pond.x,(ny-pond.y)*1.5) < 80){
+    const ang = Math.atan2((ny-pond.y)*1.5, nx-pond.x);
+    nx = pond.x + Math.cos(ang)*80;
+    ny = pond.y + Math.sin(ang)*(80/1.5);
+  }
+  return {x: Math.max(20, Math.min(W-20, nx)), y: Math.max(24, Math.min(H-20, ny))};
+}
+
+let last = performance.now();
+let tAcc = 0;
+function loop(now){
+  const dt = Math.min(0.05, (now-last)/1000);
+  last = now;
+
+  if(!gameOver){
+    tAcc += dt;
+    if(tAcc >= 1){
+      tAcc -= 1;
+      timeLeft--;
+      timeEl.textContent = timeLeft;
+      if(timeLeft<=0){
+        gameOver=true;
+        if(score > best){
+          best = score;
+          localStorage.setItem('ari-best', best);
+          bestEl.textContent = best;
+        }
+      }
+    }
+
+    if(stunTimer > 0){
+      stunTimer -= dt;
+      fox.vx *= 0.5; fox.vy *= 0.5;
+    } else {
+      const spd = 170;
+      let dx=0, dy=0;
+      if(keys['arrowup']||keys['w']) dy -= 1;
+      if(keys['arrowdown']||keys['s']) dy += 1;
+      if(keys['arrowleft']||keys['a']) dx -= 1;
+      if(keys['arrowright']||keys['d']) dx += 1;
+      if(touchTarget){
+        const ddx = touchTarget.x-fox.x, ddy = touchTarget.y-fox.y;
+        const m = Math.hypot(ddx,ddy);
+        if(m > 8){ dx = ddx/m; dy = ddy/m; }
+      }
+      const m = Math.hypot(dx,dy);
+      if(m>0){ dx/=m; dy/=m; fox.vx = dx*spd; fox.vy = dy*spd; if(dx!==0) fox.dir = dx>0?1:-1; fox.wag += dt*12; }
+      else { fox.vx*=0.7; fox.vy*=0.7; fox.wag += dt*3; }
+    }
+
+    const foxPos = collideCircles(fox, fox.x + fox.vx*dt, fox.y + fox.vy*dt, 14);
+    fox.x = foxPos.x; fox.y = foxPos.y;
+    if(fox.cooldown > 0) fox.cooldown -= dt;
+
+    const nspeed = nithy.speed + score * 0.6 + nithy.angry * 40;
+    let ndx = fox.x - nithy.x;
+    let ndy = fox.y - nithy.y;
+    const nm = Math.hypot(ndx, ndy);
+    if(nm > 1){ ndx/=nm; ndy/=nm; }
+    ndx += (Math.random()-0.5)*0.15;
+    ndy += (Math.random()-0.5)*0.15;
+    nithy.vx = ndx * nspeed;
+    nithy.vy = ndy * nspeed;
+    if(ndx !== 0) nithy.dir = ndx > 0 ? 1 : -1;
+    nithy.walk += dt * (nspeed / 20);
+    nithy.angry = Math.max(0, nithy.angry - dt * 0.2);
+
+    const nPos = collideCircles(nithy, nithy.x + nithy.vx*dt, nithy.y + nithy.vy*dt, 16);
+    nithy.x = nPos.x; nithy.y = nPos.y;
+
+    if(Math.hypot(fox.x - nithy.x, fox.y - nithy.y) < 26 && stunTimer <= 0){
+      caught++;
+      caughtEl.textContent = caught;
+      stunTimer = 1.2;
+      score = Math.max(0, score - 3);
+      scoreEl.textContent = score;
+      const ang = Math.atan2(fox.y - nithy.y, fox.x - nithy.x);
+      fox.x += Math.cos(ang) * 80;
+      fox.y += Math.sin(ang) * 80;
+      fox.x = Math.max(20, Math.min(W-20, fox.x));
+      fox.y = Math.max(24, Math.min(H-20, fox.y));
+      nithy.angry = 1;
+    }
+  }
+
+  for(const p of poops) p.age += dt;
+
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  ctx.fillStyle = '#c8e6a8';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#b8dc94';
+  for(let i=0;i<40;i++){
+    const x = (i*173)%W, y = (i*97+30)%H;
+    ctx.beginPath(); ctx.arc(x,y,10,0,Math.PI*2); ctx.fill();
+  }
+
+  ctx.fillStyle = '#d4c48a';
+  ctx.beginPath();
+  ctx.ellipse(180, 240, 130, 60, 0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#c8b878';
+  ctx.beginPath();
+  ctx.ellipse(400, 340, 90, 40, -0.2, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = '#6cb3d9';
+  ctx.beginPath();
+  ctx.ellipse(pond.x, pond.y, pond.rx, pond.ry, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#8ec7e5';
+  ctx.beginPath();
+  ctx.ellipse(pond.x-20, pond.y-10, pond.rx-30, pond.ry-25, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  for(const r of rocks){
+    ctx.fillStyle = '#9a9a90';
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#b5b5aa';
+    ctx.beginPath(); ctx.arc(r.x-r.r*0.3, r.y-r.r*0.3, r.r*0.5, 0, Math.PI*2); ctx.fill();
+  }
+
+  for(const p of poops){
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.tilt);
+    ctx.fillStyle = '#5a3820';
+    ctx.beginPath(); ctx.ellipse(0, 4, p.r*1.4, p.r*0.7, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#6b4025';
+    ctx.beginPath(); ctx.ellipse(0, 0, p.r*1.1, p.r*0.6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -p.r*0.6, p.r*0.85, p.r*0.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -p.r*1.1, p.r*0.55, p.r*0.35, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#8a5a35';
+    ctx.beginPath(); ctx.arc(-p.r*0.3, -p.r*0.2, p.r*0.25, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    if(p.age < 0.25){
+      ctx.strokeStyle = 'rgba(90,56,32,'+(1-p.age/0.25)+')';
+      ctx.lineWidth = 1;
+      const s = 4 + p.age*30;
+      ctx.beginPath(); ctx.moveTo(p.x-s, p.y-s); ctx.lineTo(p.x-s-3, p.y-s-3); ctx.moveTo(p.x+s, p.y-s); ctx.lineTo(p.x+s+3, p.y-s-3); ctx.stroke();
+    }
+  }
+
+  for(const t of trees){
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath(); ctx.ellipse(t.x+4, t.y+t.r*0.8, t.r*1.1, t.r*0.4, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#4a6b2a';
+    ctx.beginPath(); ctx.arc(t.x, t.y, t.r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#5f8636';
+    ctx.beginPath(); ctx.arc(t.x-t.r*0.35, t.y-t.r*0.35, t.r*0.75, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#77a248';
+    ctx.beginPath(); ctx.arc(t.x-t.r*0.5, t.y-t.r*0.5, t.r*0.35, 0, Math.PI*2); ctx.fill();
+  }
+
+  drawNithy(nithy.x, nithy.y, nithy.dir, nithy.walk, nithy.angry);
+  drawFox(fox.x, fox.y, fox.dir, fox.wag, stunTimer > 0);
+
+  if(stunTimer > 0){
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = '500 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('caught!', fox.x, fox.y - 28);
+  }
+
+  if(gameOver){
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = '500 26px system-ui, sans-serif';
+    ctx.fillText('Time\u2019s up!', W/2, H/2 - 30);
+    ctx.font = '400 16px system-ui, sans-serif';
+    ctx.fillText('Ari dropped ' + score + ' poops. Nithy caught you ' + caught + ' times.', W/2, H/2);
+    ctx.fillText('Best: ' + best, W/2, H/2 + 24);
+    ctx.fillText('Hit Reset to try again.', W/2, H/2 + 48);
+  }
+}
+
+function drawFox(x, y, dir, wag, stunned){
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(dir, 1);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath(); ctx.ellipse(0, 14, 20, 5, 0, 0, Math.PI*2); ctx.fill();
+
+  const tailAng = Math.sin(wag)*0.35;
+  ctx.save();
+  ctx.translate(-14, -2);
+  ctx.rotate(tailAng - 0.4);
+  ctx.fillStyle = '#d9622b';
+  ctx.beginPath(); ctx.ellipse(-10, 0, 14, 7, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#f7f0e6';
+  ctx.beginPath(); ctx.arc(-20, 0, 6, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#d9622b';
+  ctx.beginPath(); ctx.ellipse(0, 2, 16, 11, 0, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#f7f0e6';
+  ctx.beginPath(); ctx.ellipse(3, 8, 10, 5, 0, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#c14e1f';
+  ctx.fillRect(-8, 10, 3, 6);
+  ctx.fillRect(-2, 10, 3, 6);
+  ctx.fillRect(4, 10, 3, 6);
+  ctx.fillRect(10, 10, 3, 6);
+
+  ctx.fillStyle = '#d9622b';
+  ctx.beginPath(); ctx.arc(14, -4, 9, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#c14e1f';
+  ctx.beginPath(); ctx.moveTo(10, -12); ctx.lineTo(7, -6); ctx.lineTo(13, -8); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(18, -12); ctx.lineTo(15, -8); ctx.lineTo(21, -6); ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#f7f0e6';
+  ctx.beginPath(); ctx.ellipse(15, -1, 5, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#2f2a28';
+  if(stunned){
+    ctx.strokeStyle = '#2f2a28';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(13, -6); ctx.lineTo(17, -3); ctx.moveTo(17, -6); ctx.lineTo(13, -3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(9, -4); ctx.lineTo(13, -1); ctx.moveTo(13, -4); ctx.lineTo(9, -1); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.arc(15, -5, 1.6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(11, -3, 1.4, 0, Math.PI*2); ctx.fill();
+  }
+
+  ctx.fillStyle = '#2f2a28';
+  ctx.beginPath(); ctx.ellipse(20, 0, 1.6, 1.1, 0, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawNithy(x, y, dir, walk, angry){
+  ctx.save();
+  ctx.translate(x, y);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(0, 22, 14, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  const legSwing = Math.sin(walk) * 4;
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(-6, 12, 5, 12 + legSwing);
+  ctx.fillRect(1, 12, 5, 12 - legSwing);
+
+  ctx.fillStyle = '#5a7a3a';
+  ctx.fillRect(-9, -2, 18, 16);
+
+  ctx.fillStyle = '#c88a55';
+  ctx.beginPath(); ctx.arc(-11, 2, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(11, 2, 3, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(-9, 10, 18, 3);
+  ctx.fillStyle = '#c9a642';
+  ctx.fillRect(-2, 10, 4, 3);
+
+  ctx.fillStyle = '#c9a642';
+  ctx.beginPath();
+  ctx.moveTo(-6, 4);
+  ctx.lineTo(-3, -1);
+  ctx.lineTo(3, -1);
+  ctx.lineTo(6, 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#c88a55';
+  ctx.beginPath(); ctx.arc(0, -8, 8, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#4a3020';
+  ctx.beginPath();
+  ctx.ellipse(0, -12, 9, 4, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillRect(-9, -12, 18, 2);
+
+  ctx.fillStyle = '#5a3a25';
+  ctx.beginPath();
+  ctx.ellipse(0, -15, 7, 3, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = angry > 0.5 ? '#c22' : '#2f2a28';
+  ctx.beginPath(); ctx.arc(-3 + dir*0.5, -7, 1.4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(3 + dir*0.5, -7, 1.4, 0, Math.PI*2); ctx.fill();
+
+  if(angry > 0.3){
+    ctx.strokeStyle = '#2f2a28';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-5, -10); ctx.lineTo(-1, -9);
+    ctx.moveTo(1, -9); ctx.lineTo(5, -10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, -4, 2, 0.2, Math.PI - 0.2, true);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(0, -4, 1.5, 0, Math.PI);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#2f2a28';
+  ctx.beginPath(); ctx.arc(0, -5.5, 0.8, 0, Math.PI*2); ctx.fill();
+
+  ctx.font = '500 9px system-ui, sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.fillText('NITHY', 0, -22);
+
+  ctx.restore();
+}
+
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
