@@ -5,7 +5,7 @@ Anyone is free to edit or contribute to this project, I am new to github and do 
 
 A tiny browser arcade game. You are Ari the Fox. Your mission: poop all over the park. Ranger Nithy's mission: stop you. You have 90 seconds.
 
-**Play it here:** https://YOUR-USERNAME.github.io/ari-fox-poop-game/
+**Play it here:** [https://queenkopaki.github.io/Ari-Fox-Poop-Game/]
 *(link works after you enable GitHub Pages — see below)*
 
 ## How to play
