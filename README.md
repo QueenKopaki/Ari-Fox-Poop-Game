@@ -1,3 +1,6 @@
+Personal License:
+Anyone is free to edit or contribute to this project, I am new to github and do not fully know how it works, though you must ask me to redistribute and you can not claim this as your own project.
+
 # Ari the Fox vs. Ranger Nithy 🦊💩
 
 A tiny browser arcade game. You are Ari the Fox. Your mission: poop all over the park. Ranger Nithy's mission: stop you. You have 90 seconds.
